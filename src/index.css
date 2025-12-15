@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-ems-blue hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-danger {
+    @apply bg-ems-red hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-card hover:shadow-card-hover transition-shadow duration-200 border border-gray-200;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-ems-blue focus:border-transparent;
+  }
+  
+  .status-in-service {
+    @apply bg-ems-green text-white px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .status-out-service {
+    @apply bg-ems-red text-white px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .truck-card {
+    @apply bg-white rounded-lg shadow-card hover:shadow-card-hover transition-shadow duration-200 border border-gray-200 p-4 h-auto min-h-[420px];
+  }
+  
+  .status-badge {
+    @apply inline-block px-3 py-1 rounded-full text-sm font-medium;
+  }
+}
+
+@layer utilities {
+  .print-hidden {
+    @media print {
+      display: none !important;
+    }
+  }
+  
+  .print-only {
+    display: none;
+    @media print {
+      display: block !important;
+    }
+  }
+}
