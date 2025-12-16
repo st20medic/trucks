@@ -16,10 +16,11 @@ module.exports = [
         require: 'readonly',
         module: 'readonly',
         exports: 'readonly',
+        fetch: 'readonly', // Node 20+ built-in fetch
       },
     },
     rules: {
-      'no-unused-vars': 'warn',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-console': 'off',
     },
   },

@@ -6,7 +6,11 @@ const db = getFirestore();
 
 const { onRequest } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { createTransporter, fromAddress } = require('./mailer');
+const { defineSecret } = require('firebase-functions/params');
+const { sendWithMailerSend } = require('./mailersend');
+
+// Define MailerSend API key secret
+const MAILERSEND_API_KEY = defineSecret('MAILERSEND_API_KEY');
 
 // Helper to format date for display
 const formatDate = (date) => {
@@ -57,7 +61,7 @@ const generateTruckMaintenanceHtml = (truck, maintenanceAlerts) => {
 };
 
 // Function to check maintenance due dates
-const checkMaintenanceDue = async () => {
+const checkMaintenanceDue = async (testMode = false) => {
   try {
     // Get all trucks
     const trucksSnapshot = await db.collection('trucks').get();
@@ -68,8 +72,8 @@ const checkMaintenanceDue = async () => {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     
     for (const truck of trucks) {
-      // Skip this truck if it was alerted within the last 7 days
-      if (truck.lastMaintenanceAlertSent) {
+      // Skip this truck if it was alerted within the last 7 days (unless in test mode)
+      if (!testMode && truck.lastMaintenanceAlertSent) {
         const lastAlertDate = truck.lastMaintenanceAlertSent.toDate ? truck.lastMaintenanceAlertSent.toDate() : new Date(truck.lastMaintenanceAlertSent);
         if (lastAlertDate > sevenDaysAgo) {
           console.log(`Skipping truck ${truck.unitNumber} - already alerted on ${lastAlertDate.toDateString()}`);
@@ -245,6 +249,7 @@ exports.sendMaintenanceAlert = onRequest(
     region: 'us-central1',
     cors: true,
     invoker: 'public', // Allow unauthenticated access
+    secrets: [MAILERSEND_API_KEY], // Bind MailerSend API key secret
   },
   async (req, res) => {
     try {
@@ -261,7 +266,10 @@ exports.sendMaintenanceAlert = onRequest(
 
       console.log('Manual maintenance check triggered...');
       
-      const trucksWithMaintenance = await checkMaintenanceDue();
+      // Check for test mode (bypass 7-day check for testing)
+      const testMode = req.query.test === 'true' || (req.body && req.body.test === true);
+      
+      const trucksWithMaintenance = await checkMaintenanceDue(testMode);
       
       if (trucksWithMaintenance.length === 0) {
         return res.status(200).json({ 
@@ -275,40 +283,65 @@ exports.sendMaintenanceAlert = onRequest(
       // Create email content
       const htmlContent = createMaintenanceEmailHTML(trucksWithMaintenance);
       
-      const transporter = createTransporter();
-      const info = await transporter.sendMail({
-        from: fromAddress(),
-        to: 'john.browning@lincolnems.com, tw4001@aol.com, deathlikesnake6@gmail.com, sergentlatosha@gmail.com,charley.egnor@lincolnems.com',
-        subject: `Maintenance Due Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
-        html: htmlContent,
+      // Send email via MailerSend to multiple recipients with personalized names
+      // Note: MailerSend has limits on recipients per call, so we send individually
+      const recipients = [
+        { email: 'john.browning@lincolnems.com', name: 'John Browning' },
+        { email: 'st20medic@gmail.com', name: 'Johnny Browning' },
+        { email: 'deathlikesnake6@gmail.com', name: 'William Frazier' },
+        { email: 'tw4001@aol.com', name: 'Trish Watson' },
+        { email: 'sergentlatosha@gmail.com', name: 'LaTosha Sergent' },
+        { email: 'charley.egnor@lincolnems.com', name: 'Charley Egnor' }
+      ];
+      
+      const sendPromises = recipients.map(recipient => 
+        sendWithMailerSend({
+          apiKey: MAILERSEND_API_KEY.value(),
+          fromEmail: 'alerts@trucks.lincolnems.com',
+          fromName: 'Lincoln EMS Truck Alerts',
+          toEmail: recipient.email,
+          toName: recipient.name,
+          replyTo: 'maintenance@lincolnems.com',
+          subject: `Maintenance Due Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
+          html: htmlContent,
+        })
+      );
+      
+      const results = await Promise.all(sendPromises);
+      console.log(`Emails sent successfully via MailerSend to ${results.length} recipients:`, 
+        results.map(r => r.messageId).join(', '));
+
+      // Send response immediately to prevent Cloud Run retries
+      res.status(200).json({
+        ok: true,
+        message: 'Emails sent successfully',
+        trucksWithMaintenance: trucksWithMaintenance.length,
+        recipients: recipients.length,
+        recipientEmails: recipients.map(r => r.email),
+        messageIds: results.map(r => r.messageId),
+        accepted: results.flatMap(r => r.accepted),
+        rejected: results.flatMap(r => r.rejected),
       });
 
-      console.log('Email sent successfully:', info.messageId);
-
-      // Update lastMaintenanceAlertSent for all trucks that were included in the alert
+      // Update lastMaintenanceAlertSent in background (after response sent)
+      // This prevents delays that could cause Cloud Run to retry
       const updatePromises = trucksWithMaintenance.map(truck => 
         db.collection('trucks').doc(truck.id).update({
           lastMaintenanceAlertSent: new Date()
         })
       );
-      await Promise.all(updatePromises);
-      console.log(`Updated lastMaintenanceAlertSent for ${trucksWithMaintenance.length} trucks`);
-
-      return res.status(200).json({
-        ok: true,
-        message: 'Email sent successfully',
-        trucksWithMaintenance: trucksWithMaintenance.length,
-        messageId: info.messageId,
-        accepted: info.accepted,
-        rejected: info.rejected,
+      Promise.all(updatePromises).then(() => {
+        console.log(`Updated lastMaintenanceAlertSent for ${trucksWithMaintenance.length} trucks`);
+      }).catch(err => {
+        console.error('Error updating lastMaintenanceAlertSent:', err);
       });
     } catch (err) {
       console.error('sendMaintenanceAlert error:', err);
       
       // Provide more helpful error messages
       let errorMessage = String(err);
-      if (err.code === 'EAUTH') {
-        errorMessage = 'SMTP Authentication failed. Please check email credentials.';
+      if (err.message && err.message.includes('MailerSend')) {
+        errorMessage = `MailerSend API error: ${err.message}`;
       }
       
       return res.status(500).json({ ok: false, error: errorMessage, details: err.message });
@@ -322,6 +355,7 @@ exports.dailyMaintenanceCheck = onSchedule(
     schedule: '0 8 * * *',
     timeZone: 'America/New_York',
     region: 'us-central1',
+    secrets: [MAILERSEND_API_KEY], // Bind MailerSend API key secret
   },
   async () => {
     try {
@@ -338,15 +372,33 @@ exports.dailyMaintenanceCheck = onSchedule(
       
       const htmlContent = createMaintenanceEmailHTML(trucksWithMaintenance);
       
-      const transporter = createTransporter();
-      await transporter.sendMail({
-        from: fromAddress(),
-        to: 'john.browning@lincolnems.com, tw4001@aol.com, deathlikesnake6@gmail.com, sergentlatosha@gmail.com, charley.egnor@lincolnems.com',
-        subject: `Daily Maintenance Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
-        html: htmlContent,
-      });
+      // Send email via MailerSend to multiple recipients with personalized names
+      // Note: MailerSend may have limits on recipients per call, so we send individually
+      const recipients = [
+        { email: 'john.browning@lincolnems.com', name: 'John Browning' },
+        { email: 'st20medic@gmail.com', name: 'Johnny Browning' },
+        { email: 'deathlikesnake6@gmail.com', name: 'William Frazier' },
+        { email: 'tw4001@aol.com', name: 'Trish Watson' },
+        { email: 'sergentlatosha@gmail.com', name: 'LaTosha Sergent' },
+        { email: 'charley.egnor@lincolnems.com', name: 'Charley Egnor' }
+      ];
       
-      console.log('Daily maintenance email sent successfully');
+      const sendPromises = recipients.map(recipient => 
+        sendWithMailerSend({
+          apiKey: MAILERSEND_API_KEY.value(),
+          fromEmail: 'alerts@trucks.lincolnems.com',
+          fromName: 'Lincoln EMS Truck Alerts',
+          toEmail: recipient.email,
+          toName: recipient.name,
+          replyTo: 'maintenance@lincolnems.com',
+          subject: `Daily Maintenance Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
+          html: htmlContent,
+        })
+      );
+      
+      const results = await Promise.all(sendPromises);
+      console.log(`Daily maintenance emails sent successfully via MailerSend to ${results.length} recipients:`, 
+        results.map(r => r.messageId).join(', '));
       
       // Update lastMaintenanceAlertSent for all trucks that were included in the alert
       const updatePromises = trucksWithMaintenance.map(truck => 
