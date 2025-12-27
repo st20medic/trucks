@@ -287,7 +287,6 @@ exports.sendMaintenanceAlert = onRequest(
       // Note: MailerSend has limits on recipients per call, so we send individually
       const recipients = [
         { email: 'john.browning@lincolnems.com', name: 'John Browning' },
-        { email: 'st20medic@gmail.com', name: 'Johnny Browning' },
         { email: 'deathlikesnake6@gmail.com', name: 'William Frazier' },
         { email: 'tw4001@aol.com', name: 'Trish Watson' },
         { email: 'sergentlatosha@gmail.com', name: 'LaTosha Sergent' },
@@ -376,7 +375,6 @@ exports.dailyMaintenanceCheck = onSchedule(
       // Note: MailerSend may have limits on recipients per call, so we send individually
       const recipients = [
         { email: 'john.browning@lincolnems.com', name: 'John Browning' },
-        { email: 'st20medic@gmail.com', name: 'Johnny Browning' },
         { email: 'deathlikesnake6@gmail.com', name: 'William Frazier' },
         { email: 'tw4001@aol.com', name: 'Trish Watson' },
         { email: 'sergentlatosha@gmail.com', name: 'LaTosha Sergent' },
