@@ -301,11 +301,11 @@ exports.sendMaintenanceAlert = onRequest(
           toEmail: recipient.email,
           toName: recipient.name,
           replyTo: 'maintenance@lincolnems.com',
-          subject: `Maintenance Due Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
-          html: htmlContent,
+        subject: `Maintenance Due Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
+        html: htmlContent,
         })
       );
-      
+
       const results = await Promise.all(sendPromises);
       console.log(`Emails sent successfully via MailerSend to ${results.length} recipients:`, 
         results.map(r => r.messageId).join(', '));
@@ -330,7 +330,7 @@ exports.sendMaintenanceAlert = onRequest(
         })
       );
       Promise.all(updatePromises).then(() => {
-        console.log(`Updated lastMaintenanceAlertSent for ${trucksWithMaintenance.length} trucks`);
+      console.log(`Updated lastMaintenanceAlertSent for ${trucksWithMaintenance.length} trucks`);
       }).catch(err => {
         console.error('Error updating lastMaintenanceAlertSent:', err);
       });
@@ -389,8 +389,8 @@ exports.dailyMaintenanceCheck = onSchedule(
           toEmail: recipient.email,
           toName: recipient.name,
           replyTo: 'maintenance@lincolnems.com',
-          subject: `Daily Maintenance Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
-          html: htmlContent,
+        subject: `Daily Maintenance Alert - ${trucksWithMaintenance.length} Truck(s) Require Attention`,
+        html: htmlContent,
         })
       );
       
